@@ -155,4 +155,6 @@ async function initialiseOrderbooks(){
     }
 }
 
-export default orderbooks;
+
+
+export { orderbooks, assetMap, initialiseOrderbooks };
