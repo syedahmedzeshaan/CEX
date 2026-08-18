@@ -18,128 +18,155 @@ interface Order {
 
 
 
-class Orderbook{
-    asks:Map<Number,Order[]>
-    bids:Map<Number,Order[]>
-    askHeap:MinHeap<Number>;
-    bidHeap:MaxHeap<Number>;
-    price:Number;
+class OrderBook {
+    asks:Map<number,Order[]>;
+    bids : Map<number,Order[]>;
+    asksHeap : MinHeap<number>;
+    bidsHeap : MaxHeap<number>;
 
     public constructor(){
-        this.asks = new Map<Number,Order[]>;
-        this.bids = new Map<Number,Order[]>;
+        this.asks = new Map();
+        this.bids = new Map();
 
-        this.askHeap = new MinHeap();
-        this.bidHeap = new MaxHeap();
-
-        this.price = 0;
-
+        this.asksHeap = new MinHeap();
+        this.bidsHeap = new MaxHeap();
     }
 
-    public addOrder(order:Order):void{
-        let price = order.price;
+    public addOrder(order:Order){
+        const price = order.price;
+        const map = order.side === "buy" ? this.bids : this.asks ;
+        const heap = order.side === "buy" ? this.bidsHeap : this.asksHeap;
 
-        let map = order.side === "buy"?this.bids:this.asks;
-        let heap = order.side === "buy"?this.bidHeap:this.askHeap;
-        
-        // if(!map.has(price)){
-        //     let arr:Order[] = [];
-        //     arr.push(order);
-        //     map.set(price,arr);
-        // }else{
-        //     let arr = map.get(price)!;
-        //     arr.push(order);
-        //     map.set(price,arr);
-        // }
-        let orders = map.get(price);//returns null or reference to the array
-    //optimisation -- apparently in ts, map.get() returns you a NOT a copy , but reference to the actual array itself
-        if(orders){
-            orders.push(order)
-        }
-        else{
+        const ordersArr = map.get(price);
+
+        if(ordersArr === undefined){
             map.set(price,[order]);
             heap.offer(price);
         }
-
-        
-        return ;
-    }
-
-    public removeOrder(orderId:String,price:Number,side:"buy"|"sell"){
-        const map = side ==="buy"? this.bids : this.asks;
-
-        const orders = map.get(price);
-        if(!orders){
-            return { 
-                    success: false, 
-                    reason: "PRICE_LEVEL_NOT_FOUND"
-                };
-        }
-        const index = orders.findIndex(order=>order.id === orderId);
-        if(index === -1){
-            return { 
-                    success: false, 
-                    reason: "ORDER_NOT_FOUND"
-                };
-        }
-        orders.splice(index,1);
-
-        if(orders.length === 0){
-            map.delete(price);
+        else{
+            ordersArr.push(order);
         }
 
         return {
             success:true
         }
     }
-    
-    public getBestBid(){
-        const bestBid = this.bidHeap.peek();
-        if(bestBid === undefined){
-            return { 
-                    success: false, 
-                    reason: "EMPTY_ORDERBOOK"
-                };
+
+    public removeOrder(order:Order){
+        const orderId = order.id;
+        const price = order.price;
+
+        const map = order.side === "buy" ? this.bids : this.asks;
+        const heap = order.side === "buy" ? this.bidsHeap : this.asksHeap;
+
+        const orderArr = map.get(price);
+
+        if(orderArr === undefined){
+            return {
+                success:false,
+                reason:"PRICE_LEVEL_DOESNT_EXIST"
+            }
         }
-        const orders = this.bids.get(bestBid);
+
+        const index = orderArr.findIndex(order=>order.id === orderId);
+
+        if(index === -1){
+            return {
+                success:false,
+                reason:"ORDER_DOESNT_EXIST"
+            }
+        }
+
+        orderArr.splice(index,1);
+
+        if(orderArr.length === 0){
+            map.delete(price);
+            heap.remove(price);
+        }
+
+        return {
+            success:true
+        }
+
+    }
+
+
+    public getBestBid(){
+        const price = this.bidsHeap.peek();
+        if(price === undefined){
+            return {
+                success:false,
+                reason:"ORDERBOOK_IS_EMPTY"
+            }
+        }
+        const orders = this.bids.get(price);
+
         if(!orders){
             return { 
                     success: false, 
-                    reason: "PRICE_LEVEL_MISSING"
+                    reason: "ORDERBOOK_INCONSISTENT"
                 };
         }
-        
-        return { 
-                    success: false, 
-                    order: orders[0]
-                };
-    }
-    public getBestAsk(){
-        const bestAsk = this.askHeap.peek();
-        if(bestAsk === undefined){
-            return { 
-                    success: false, 
-                    reason: "EMPTY_ORDERBOOK"
-                };;
-        }
-        const orders = this.asks.get(bestAsk);
-        if(orders === undefined){
-            return  {
-                    success: false, 
-                    reason: "PRICE_LEVEL_MISSING"
-                };    
-        }
-        return { 
+
+        return {
                     success: true, 
                     order: orders[0]
                 };
+
     }
+
+    public getBestAsk(){
+        const price = this.asksHeap.peek();
+        if(price === undefined){
+            return {
+                success:false,
+                reason:"ORDERBOOK_IS_EMPTY"
+            }
+        }
+        const orders = this.asks.get(price);
+
+        if(!orders){
+            return { 
+                    success: false, 
+                    reason: "ORDERBOOK_INCONSISTENT"
+                };
+        }
+
+        return {
+                    success: true, 
+                    order: orders[0]
+                };
+
+    }
+
+    public clone(): OrderBook {
+        const copy = new OrderBook();
+        copy.asks = new Map();
+        for (const [price, orders] of this.asks) {          
+            copy.asks.set(price,orders.map(order => ({ ...order })));  
+        }
+        copy.bids = new Map();
+        for (const [price, orders] of this.bids) {          
+            copy.bids.set(price,orders.map(order => ({ ...order })));  
+        }
+        copy.asksHeap = new MinHeap();
+        for (const price of this.asksHeap.toArray()) {
+            copy.asksHeap.offer(price);
+        }
+        copy.bidsHeap = new MaxHeap();
+        for (const price of this.bidsHeap.toArray()) {
+            copy.bidsHeap.offer(price);
+        }
+        return copy;
+}
 
 
 }
 
 
-let orderbooks:Map<string,Orderbook> = new Map(); 
+
+
+let orderBooks:Map<string,OrderBook> = new Map(); 
 let assetMap:Map<string,string> = new Map();
 async function initialiseOrderbooks(){
     const assets = await prisma.asset.findMany({
@@ -150,11 +177,11 @@ async function initialiseOrderbooks(){
     });
 
     for (const asset of assets) {
-        orderbooks.set(asset.id, new Orderbook());
+        orderBooks.set(asset.id, new OrderBook());
         assetMap.set(asset.Symbol, asset.id);
     }
 }
 
+await initialiseOrderbooks();
 
-
-export { orderbooks, assetMap, initialiseOrderbooks };
+export { assetMap, initialiseOrderbooks , Order ,orderBooks,OrderBook};
