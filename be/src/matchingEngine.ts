@@ -20,6 +20,7 @@ interface MatchingResult {
 
     success: boolean;
     reason: string;
+    incomingOrder : Order ;
     ordersToUpdate: Map<string,Order>;
     fills: Fills[];
     usdBalanceUpdates: Map<string, usdBalanceUpdate>;
@@ -32,10 +33,11 @@ interface MatchingResult {
 
 export class matchingEngine{
 
-    public initialiseResult(){
+    public initialiseResult(order:Order){
         let matchingResult: MatchingResult = {
                 success: true,
                 reason:"",
+                incomingOrder: order,
                 ordersToUpdate:new Map(),
                 fills: [],
                 usdBalanceUpdates: new Map(),
@@ -71,13 +73,15 @@ export class matchingEngine{
 
     public match(order:Order){
 
-        let matchingResult = this.initialiseResult();
+        let matchingResult = this.initialiseResult(order);
+
         const incomingOrder = {...order};
         if (incomingOrder.qty < 0 || incomingOrder.filledQty < 0 || incomingOrder.filledQty > incomingOrder.qty) {
             matchingResult.success = false;
             matchingResult.reason = "INVALID_INCOMING_ORDER";
             return matchingResult;
         }
+
         const assetOrderBook = orderBooks.get(incomingOrder.assetId);
 
         if(assetOrderBook === undefined){
@@ -183,8 +187,8 @@ export class matchingEngine{
                     side: "buy",
                     type: "taker",
                     price: restingOrder.price,
-                    filled_at: new Date()
-
+                    filled_at: new Date(),
+                    userId:incomingOrder.userId
                 };
 
                 let sellersFill: Fills = {
@@ -195,7 +199,8 @@ export class matchingEngine{
                     side: "sell",
                     type: "maker",
                     price: restingOrder.price,
-                    filled_at: new Date()
+                    filled_at: new Date(),
+                    userId:restingOrder.userId
 
                 };
                 matchingResult.fills.push(buyersFill);
@@ -379,7 +384,8 @@ export class matchingEngine{
                     side:"buy",
                     type:"maker",
                     filledQty:fillQty,
-                    filled_at:new Date()
+                    filled_at:new Date(),
+                    userId:restingOrder.userId
                 }
 
                 let sellersFill:Fills = {
@@ -391,6 +397,7 @@ export class matchingEngine{
                     side:"sell",
                     type:"taker",
                     filled_at:new Date(),
+                    userId:incomingOrder.userId
                 }
 
                 matchingResult.fills.push(sellersFill);

@@ -4,10 +4,12 @@ import { z } from "zod";
 import {prisma} from "../lib/prisma.ts"
 import jwt from "jsonwebtoken";
 
-import auth from "./auth.ts";
-import { errorHandler } from "./error.ts";
+import auth from "./middleware/auth.ts";
+import { errorHandler } from "./middleware/error.ts";
+import { orderService } from "./orderService.ts";
 
 const app = express();
+const orderServiceObject = new orderService();
 
 const port = process.env.PORT!;
 const jwt_secret = process.env.JWT_SECRET!;
@@ -127,47 +129,116 @@ const orderSchema = z.object({
     side: z.enum(["buy", "sell"]),
     price: z.number().int().positive(),
     qty: z.number().int().positive(),
-    type: z.enum(["maker", "taker"])
-
 });
-
+//create an order.
 app.post("/order", auth ,async (req,res)=>{
     const result = orderSchema.safeParse(req.body);
+    //req.body will contain -> assetId, side , price, qty
     if(!result.success){
         return res.status(400).json({
                 error: result.error
             });
     }
     const userId = req.userId!;
-    const {assetId,side,price,qty,type} = result.data;
-
-
-    const order = await prisma.order.create({
-        data:{
-        userId,
-        assetId,
-        side,
-        price,
-        qty,
-        type,
-        created_at:new Date(),
-        status:"placed"
+    
+    const response = await orderServiceObject.placeOrder(result.data,userId);
+    if(response.success === false){
+        return res.status(400).json({
+            "status":"failed",
+            "reason":response.reason
+        })
     }
-    });
+
+    return res.status(201).json(response);
 
 });
 
 
-app.get("/orders",(req,res)=>{});
-app.get("/order/:orderId",(req,res)=>{});
-app.delete("/order/:orderId",(req,res)=>{});
+app.get("/orders",auth ,async (req,res)=>{
+    const userId = req.userId!;
+    const userOrders = await prisma.order.findMany({
+        where:{
+            userId:userId
+        },
+        orderBy:{
+            created_at:"desc"
+        }
+    });
+
+    return res.json(userOrders);
+});
+
+app.get("/order/:orderId",auth, async (req,res)=>{
+    const userId = req.userId;
+    const orderId = req.params.orderId;
+
+    if (typeof orderId !== "string") {
+        return res.status(400).json({
+            msg: "invalid order id"
+        });
+    }
+
+    const order = await prisma.order.findFirst({
+        where:{
+            userId:userId,
+            id:orderId
+        }
+    });
+    if (order === null) {
+        return res.status(404).json({
+            status: "failed",
+            msg: "order not found"
+        });
+    }
+    return res.status(200).json(order);
+});
+
+
+app.delete("/order/:orderId",auth,async (req,res)=>{
+    const userId = req.userId;
+    const orderId = req.params.orderId;
+    if(typeof orderId !== "string"){
+        return res.status(400).json({
+            msg: "invalid order id"
+        });
+    }
+    const order = await prisma.order.findFirst({
+        where:{
+            id:orderId,
+            userId:userId
+        }
+    });
+    if(order === undefined){
+        return res.status(400).json({
+            status:"failed",
+            reason:"order doesnt exist"
+        });
+    }
+    await prisma.order.delete({
+        where:{
+            id:orderId
+        }
+    });
+    return res.status(204).json({
+        status:"successful",
+    })
+});
 
 //----MARKET DATA---
 app.get("/depth/:symbol",(req,res)=>{});
 
 
 //--------ACCOUNT INFORMATION--------
-app.get("/fills",(req,res)=>{});
+app.get("/fills",auth,async(req,res)=>{
+    const userId = req.userId!;
+    
+    const fills = await prisma.fills.findMany({
+        where:{
+            userId:userId
+        }
+    });
+
+});
 app.get("/balance/usd",(req,res)=>{});
 app.get("/balance",(req,res)=>{});
 

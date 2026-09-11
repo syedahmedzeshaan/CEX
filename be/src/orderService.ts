@@ -1,15 +1,34 @@
 import { matchingEngine } from "./matchingEngine";
 import { Order, orderBooks, OrderBook } from "./orderbook";
 import { prisma } from "../lib/prisma";
-
-class orderService {
+type side = "buy"|"sell";
+type reqBody = {
+    assetId:string,
+    side:side,
+    qty:number,
+    price:number
+};
+export class orderService {
 
     engine: matchingEngine;
     public constructor() {
         this.engine = new matchingEngine();
     }
 
-    public async placeOrder(order: Order) {
+    public async placeOrder(reqBody:reqBody,userId:string) {
+
+        const order:Order = {
+                id:crypto.randomUUID(),
+                userId: userId,
+                assetId: reqBody.assetId,
+                side: reqBody.side,
+                price: reqBody.price,
+                qty: reqBody.qty ,
+                filledQty: 0 ,
+                type: "taker" ,
+                created_at: new Date(),
+                status: "placed" 
+        }
         const res = this.engine.match(order);
 
         if (!res.success) {
@@ -25,7 +44,13 @@ class orderService {
 
         try {
             await prisma.$transaction(async (tx) => {
-                // Task 1 => update orders
+
+                //Task1 create incomingOrder
+                await tx.order.create({
+                    data:res.incomingOrder
+                });
+
+                // Task 2 => update orders
                 for (const orderObj of res.ordersToUpdate.values()) {
                     await tx.order.update({
                         where: {
@@ -38,7 +63,7 @@ class orderService {
                     });
                 }
 
-                // Task 2 => create fillss
+                // Task 3 => create fillss
                 if (res.fills.length > 0) {
                     await tx.fills.createMany({
                         data: res.fills
@@ -53,7 +78,7 @@ class orderService {
                     // but we replace this with one createMany()
                     //}
 
-                // Task 3 => update asset bals
+                // Task 4 => update asset bals
                 for (const update of res.assetBalanceUpdates.values()) {
                     await tx.balance.updateMany({
                         where: {
@@ -71,7 +96,7 @@ class orderService {
                     });
                 }
 
-                // Task 4 => update USD balances
+                // Task 5 => update USD balances
                 for (const update of res.usdBalanceUpdates.values()) {
                     await tx.user.update({
                         where: {
@@ -95,9 +120,11 @@ class orderService {
             };
         }
 
-        // DB transaction succeeded => commit new order book
         orderBooks.set(order.assetId, res.newOrderBook);
-
-        return res;
+        return {
+            success: true,
+            order: res.incomingOrder,
+            fills: res.fills
+        };
     }
 }

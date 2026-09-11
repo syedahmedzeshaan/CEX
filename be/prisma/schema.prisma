@@ -39,6 +39,7 @@ model User{
 
   orders Order[]
   balance Balance[]
+  fills Fills[]
 }
 
 model Asset{
@@ -80,6 +81,9 @@ model Order{
 
 model Fills{
   id String @id @default(uuid())
+
+  userId String
+  user User @relation(fields: [userId],references: [id])
 
   orderId String
   order Order @relation(fields: [orderId],references: [id])
