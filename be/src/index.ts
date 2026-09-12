@@ -7,6 +7,7 @@ import jwt from "jsonwebtoken";
 import auth from "./middleware/auth.ts";
 import { errorHandler } from "./middleware/error.ts";
 import { orderService } from "./orderService.ts";
+import { inMemoryBalances } from "./inMemoryBalances.ts";
 
 const app = express();
 const orderServiceObject = new orderService();
@@ -32,7 +33,7 @@ export const loginSchema = z.object({
     password: z.string().min(8)
 });
 
-
+export const userBalances = new BalanceManager();
 
 app.post("/",(req,res)=>{
     res.json({
@@ -71,6 +72,12 @@ app.post("/signup",async(req,res)=>{
                     username,
                     password:hashedPassword
                 }
+        });
+
+        userBalances.balances.set(user.id, {
+            usdBal: 0,
+            lockedBal: 0,
+            assets: new Map()
         });
 
         return res.status(201).json({
@@ -238,9 +245,30 @@ app.get("/fills",auth,async(req,res)=>{
         }
     });
 
+    return res.status(200).json(fills);
+
 });
-app.get("/balance/usd",(req,res)=>{});
-app.get("/balance",(req,res)=>{});
+app.get("/balance/usd",auth, async(req,res)=>{
+    const userId = req.userId;
+    const user = await prisma.user.findFirst({
+        where:{
+            id:userId
+        }
+    });
+    return res.json({
+        balance:user?.usdBal
+    });
+});
+
+app.get("/balance",auth,async(req,res)=>{
+    const userId = req.userId;
+    const balances = await prisma.balance.findMany({
+        where:{
+            userId
+        }
+    });
+    return res.json(balances);
+});
 
 app.use(errorHandler);
 
