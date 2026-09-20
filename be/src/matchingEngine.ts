@@ -1,7 +1,8 @@
 import { Fills } from "../generated/prisma/browser";
-import {orderBooks,Order,OrderBook} from "./orderbook";
-import { userBalances } from ".";
-import { UserBalance } from "./inMemoryBalances";
+import {orderBooks,Order} from "./orderbook";
+import {balances} from ".";
+import {Quantities} from "./inMemoryBalances";
+
 interface usdBalanceUpdate{
     userId:string;
     usdBalance:number;
@@ -25,9 +26,6 @@ interface MatchingResult {
     fills: Fills[];
     usdBalanceUpdates: Map<string, usdBalanceUpdate>;
     assetBalanceUpdates: Map<string, assetBalanceUpdate>;
-    newOrderBook:OrderBook|undefined;
-    newBalance: UserBalance | undefined;
-
 
 }
 
@@ -42,14 +40,12 @@ export class matchingEngine{
                 ordersToUpdate:new Map(),
                 fills: [],
                 usdBalanceUpdates: new Map(),
-                assetBalanceUpdates: new Map(),
-                newOrderBook:undefined,
-                newBalance:cloneBalance(order.userId)
+                assetBalanceUpdates: new Map()
             };
         return matchingResult;
     }
 
-    private addUsdBalanceUpdate(updates: Map<string, usdBalanceUpdate>, update: usdBalanceUpdate) {
+    private addUsdBalanceUpdate(updates: Map<string, usdBalanceUpdate>, update: usdBalanceUpdate,userBalance:Map<string,Quantities>) {
         const existing = updates.get(update.userId);
 
         if (existing) {
@@ -58,9 +54,15 @@ export class matchingEngine{
         } else {
             updates.set(update.userId, { ...update });
         }
+
+        const balance = userBalance.get("usd")!;
+
+        balance.lockedQty+=update.lockedBalance;
+        balance.qty+=update.usdBalance;
+        
     }
 
-    private addAssetBalanceUpdate(updates: Map<string, assetBalanceUpdate>,update: assetBalanceUpdate) {
+    private addAssetBalanceUpdate(updates: Map<string, assetBalanceUpdate>,update: assetBalanceUpdate,userBalances:Map<string,Quantities>) {
         const existing = updates.get(update.userId + ":" + update.assetId);
         if (existing) {
             existing.assetBalance += update.assetBalance;
@@ -71,87 +73,95 @@ export class matchingEngine{
                 { ...update }
             );
         }
+
+        const balances = userBalances.get(update.assetId)!;
+        balances.lockedQty+=update.assetLockedBalance;
+        balances.qty+=update.assetBalance;
     }
 
-    public match(order:Order){
+    public match(order:Order,userBalances:Map<string,Quantities>){
 
         let matchingResult = this.initialiseResult(order);
-
         const incomingOrder = {...order};
+        
+        
         if (incomingOrder.qty < 0 || incomingOrder.filledQty < 0 || incomingOrder.filledQty > incomingOrder.qty) {
             matchingResult.success = false;
             matchingResult.reason = "INVALID_INCOMING_ORDER";
             return matchingResult;
         }
 
-        const assetOrderBook = orderBooks.get(incomingOrder.assetId);
-
-        if(assetOrderBook === undefined){
-            matchingResult.success= false;
-            matchingResult.reason = "ORDERBOOK_UNDEFINED";
-            return matchingResult;
-        }
-        const orderBook =  assetOrderBook.clone();
+        const orderBook = orderBooks.get(incomingOrder.assetId);
 
         if(orderBook === undefined){
             matchingResult.success= false;
             matchingResult.reason = "ORDERBOOK_UNDEFINED";
             return matchingResult;
         }
-        
-        matchingResult.newOrderBook = orderBook;
 
-
-        const userBalance = userBalances.get(incomingOrder.userId);
-        if (userBalance === undefined) {
-            matchingResult.success = false;
-            matchingResult.reason = "USER_BALANCE_UNDEFINED";
-            return matchingResult;
+        if(!userBalances.has(incomingOrder.assetId)){
+            userBalances.set(incomingOrder.assetId,{
+                qty:0,
+                lockedQty:0
+            });
         }
 
 
-
         if (incomingOrder.side === "buy") {
-            const requiredUsd = incomingOrder.price * incomingOrder.qty;
+            const requiredBalance = incomingOrder.price * incomingOrder.qty;
 
-            if (userBalance.usdBal < requiredUsd) {
+            const usdBalance = userBalances.get("usd");
+
+            if(usdBalance === undefined){
                 matchingResult.success = false;
-                matchingResult.reason = "INSUFFICIENT_USD_BALANCE";
+                matchingResult.reason = "BALANCES_COMPROMISED";
+                return matchingResult;   
+            }
+
+            if(requiredBalance > usdBalance.qty - usdBalance.lockedQty){
+                matchingResult.success = false;
+                matchingResult.reason = "INSUFFICIENT_ACCOUNT_BALANCE";
                 return matchingResult;
             }
-            this.addUsdBalanceUpdate(matchingResult.usdBalanceUpdates,{
-                    userId: incomingOrder.userId,
-                    usdBalance: -requiredUsd,
-                    lockedBalance: requiredUsd
-                }
 
-            );
+            this.addUsdBalanceUpdate( matchingResult.usdBalanceUpdates,{
+                                userId: incomingOrder.userId,
+                                usdBalance: 0,
+                                lockedBalance: requiredBalance
+                            },userBalances);
+
+
+            
+
 } else {
-    const assetBalance = userBalance.assets.get(incomingOrder.assetId);
+
+    const assetBalance = userBalances.get(incomingOrder.assetId);
+
     if (assetBalance === undefined) {
         matchingResult.success = false;
         matchingResult.reason = "ASSET_BALANCE_UNDEFINED";
         return matchingResult;
     }
-    if (assetBalance.qty < incomingOrder.qty) {
+    const requiredBalance = incomingOrder.qty;
+
+    if(requiredBalance > assetBalance.qty - assetBalance.lockedQty){
         matchingResult.success = false;
-        matchingResult.reason = "INSUFFICIENT_ASSET_BALANCE";
+        matchingResult.reason = "insufficient_asset_balance";
         return matchingResult;
     }
-    this.addAssetBalanceUpdate(matchingResult.assetBalanceUpdates,
-        {
+
+    this.addAssetBalanceUpdate(matchingResult.assetBalanceUpdates,{
             userId: incomingOrder.userId,
             assetId: incomingOrder.assetId,
-            assetBalance: -incomingOrder.qty,
+            assetBalance: 0,
             assetLockedBalance: incomingOrder.qty
-        }
-
-    );
+    },userBalances);
 
 }
 
         if(incomingOrder.side === "buy")
         {
+            
             let remainingQty = incomingOrder.qty - incomingOrder.filledQty;
 
             while(remainingQty > 0){
@@ -181,6 +191,13 @@ export class matchingEngine{
                 if (restingOrder.filledQty < 0 || restingOrder.filledQty >= restingOrder.qty) {
                     matchingResult.success = false;
                     matchingResult.reason = "INVALID_RESTING_ORDER";
+                    return matchingResult;
+                }
+
+                const targetUserBalances = balances.getBalance(restingOrder.userId);
+                if (targetUserBalances === undefined) {
+                    matchingResult.success = false;
+                    matchingResult.reason = "seller user balances undefined";
                     return matchingResult;
                 }
 
@@ -268,11 +285,11 @@ export class matchingEngine{
                 let buyersBalance = {
                     userId : incomingOrder.userId,
                     usdBalance : -(restingOrder.price * filledQty),// should be usdBalance -= restingOrder.price * filledQty,
-                    lockedBalance:-(restingOrder.price * filledQty)
+                    lockedBalance:-(incomingOrder.price * filledQty)
                 }
 
-                this.addUsdBalanceUpdate(matchingResult.usdBalanceUpdates,sellerBalance);
-                this.addUsdBalanceUpdate(matchingResult.usdBalanceUpdates,buyersBalance);
+                this.addUsdBalanceUpdate(matchingResult.usdBalanceUpdates,sellerBalance,targetUserBalances);
+                this.addUsdBalanceUpdate(matchingResult.usdBalanceUpdates,buyersBalance,userBalances);
 
                 let sellerAssetBalance = {
                     userId:restingOrder.userId,
@@ -288,8 +305,8 @@ export class matchingEngine{
                 }
 
 
-                this.addAssetBalanceUpdate(matchingResult.assetBalanceUpdates, sellerAssetBalance);
-                this.addAssetBalanceUpdate(matchingResult.assetBalanceUpdates, buyerAssetBalance);
+                this.addAssetBalanceUpdate(matchingResult.assetBalanceUpdates, sellerAssetBalance,targetUserBalances);
+                this.addAssetBalanceUpdate(matchingResult.assetBalanceUpdates, buyerAssetBalance,userBalances);
             }
 
                 //update incming order statuses
@@ -343,6 +360,13 @@ export class matchingEngine{
                 if(incomingOrder.price > restingOrder.price ){
                     break;
                 }
+                const targetUserBalances = balances.getBalance(restingOrder.userId);
+                if (targetUserBalances === undefined) {
+                    matchingResult.success = false;
+                    matchingResult.reason = "seller user balances undefined";
+                    return matchingResult;
+                }
+
                 let availableQty = restingOrder.qty - restingOrder.filledQty;
                 let fillQty = Math.min(availableQty,remainingQty);
 
@@ -395,7 +419,7 @@ export class matchingEngine{
                 let buyerUpdate = {
                     userId:restingOrder.userId,
                     usdBalance:-(tradeVal),
-                    lockedBalance:-(tradeVal)
+                    lockedBalance:-(restingOrder.price * fillQty)
                 };
 
                 let sellerUpdate = {
@@ -404,8 +428,8 @@ export class matchingEngine{
                     lockedBalance:0
                 };
 
-                this.addUsdBalanceUpdate(matchingResult.usdBalanceUpdates,sellerUpdate);
-                this.addUsdBalanceUpdate(matchingResult.usdBalanceUpdates,buyerUpdate);
+                this.addUsdBalanceUpdate(matchingResult.usdBalanceUpdates,sellerUpdate,userBalances);
+                this.addUsdBalanceUpdate(matchingResult.usdBalanceUpdates,buyerUpdate,targetUserBalances);
 
                 let buyerAssetBalance = {
                     userId: restingOrder.userId,
@@ -421,8 +445,8 @@ export class matchingEngine{
                     assetLockedBalance : -(fillQty)
                 }
 
-               this.addAssetBalanceUpdate(matchingResult.assetBalanceUpdates, sellerAssetBalance);
-               this.addAssetBalanceUpdate(matchingResult.assetBalanceUpdates, buyerAssetBalance);
+               this.addAssetBalanceUpdate(matchingResult.assetBalanceUpdates, sellerAssetBalance,userBalances);
+               this.addAssetBalanceUpdate(matchingResult.assetBalanceUpdates, buyerAssetBalance,targetUserBalances);
 
                 
                 //step 3 create fills
@@ -475,19 +499,5 @@ export class matchingEngine{
         }
 
         return matchingResult;
-    }
-
-    public commit(assetId:string, newOrderBook:OrderBook){
-        if(!assetId || !newOrderBook){
-            return {
-                success: false,
-                reason: "INVALID_COMMIT"
-            };
-        }
-        orderBooks.set(assetId,newOrderBook);
-        return {
-            success: true,
-            reason: "YOU_NEED_A_REASON_FOR_SUCCESS?   >_<"
-        };
     }
 }

@@ -1,6 +1,7 @@
 import { matchingEngine } from "./matchingEngine";
-import { Order, orderBooks, OrderBook } from "./orderbook";
+import { Order } from "./orderbook";
 import { prisma } from "../lib/prisma";
+import { balances } from ".";
 type side = "buy"|"sell";
 type reqBody = {
     assetId:string,
@@ -8,11 +9,29 @@ type reqBody = {
     qty:number,
     price:number
 };
-export class orderService {
 
+const persistanceQueue = new Map<string , Promise<void>>();
+
+export class orderService {
     engine: matchingEngine;
     public constructor() {
         this.engine = new matchingEngine();
+    }
+
+    private onPersistFailure(res: any, err: unknown) {
+        console.error("PERSIST_FAILED", res.incomingOrder.id, err);
+        // TODO: write res to an outbox table / retry queue so a crash
+    }
+
+    private enqueuePersist(assetId:string,res:any){
+        const prev = persistanceQueue.get(assetId)??Promise.resolve();
+
+        const next = prev
+                        .then(()=>this.persist(res))
+                        .catch((err)=>this.onPersistFailure(res,err));
+
+        persistanceQueue.set(assetId,next);
+        return next;
     }
 
     public async placeOrder(reqBody:reqBody,userId:string) {
@@ -29,18 +48,32 @@ export class orderService {
                 created_at: new Date(),
                 status: "placed" 
         }
-        const res = this.engine.match(order);
+
+        const userBalances = balances.getBalance(order.userId);
+
+        if(userBalances === undefined){
+            return {
+                success: false,
+                reason: "USERBALANCES_UNDEFINED"
+            };
+        }
+
+        const res = this.engine.match(order,userBalances);
 
         if (!res.success) {
             return res;
         }
 
-        if (res.newOrderBook === undefined) {
-            return {
-                success: false,
-                reason: "NEW_ORDERBOOK_UNDEFINED"
-            };
-        }
+        await this.enqueuePersist(order.assetId ,res);
+        balances.map.set(userId,res.newBalance);
+        return {
+            success: true,
+            order: res.incomingOrder,
+            fills: res.fills
+        };
+    }
+
+    private async persist(res:any){
 
         try {
             await prisma.$transaction(async (tx) => {
@@ -114,17 +147,7 @@ export class orderService {
                 }
             });
         } catch (err) {
-            return {
-                success: false,
-                reason: "TRANSACTION_FAILED"
-            };
+             throw err;
         }
-
-        orderBooks.set(order.assetId, res.newOrderBook);
-        return {
-            success: true,
-            order: res.incomingOrder,
-            fills: res.fills
-        };
     }
 }

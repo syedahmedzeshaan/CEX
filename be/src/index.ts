@@ -8,9 +8,11 @@ import auth from "./middleware/auth.ts";
 import { errorHandler } from "./middleware/error.ts";
 import { orderService } from "./orderService.ts";
 import { inMemoryBalances } from "./inMemoryBalances.ts";
+import { WebSocketServer } from "ws";
 
 const app = express();
 const orderServiceObject = new orderService();
+export const balances = new inMemoryBalances();
 
 const port = process.env.PORT!;
 const jwt_secret = process.env.JWT_SECRET!;
@@ -33,7 +35,7 @@ export const loginSchema = z.object({
     password: z.string().min(8)
 });
 
-export const userBalances = new BalanceManager();
+
 
 app.post("/",(req,res)=>{
     res.json({
@@ -74,11 +76,7 @@ app.post("/signup",async(req,res)=>{
                 }
         });
 
-        userBalances.balances.set(user.id, {
-            usdBal: 0,
-            lockedBal: 0,
-            assets: new Map()
-        });
+        balances.createAccount(user.id);
 
         return res.status(201).json({
             "msg":"account successfully created"
@@ -272,6 +270,23 @@ app.get("/balance",auth,async(req,res)=>{
 
 app.use(errorHandler);
 
-app.listen(port,()=>{
+const httpServer = app.listen(3000,()=>{
     console.log("HEEHe, listening on port "+ port);
 });
+
+const wsServer = new WebSocketServer({
+    server:httpServer
+});
+
+wsServer.on("connection",(ws)=>{
+    console.log("WebSocket connection established");
+
+    ws.on("message", (message) => {
+        console.log("message:", message.toString());
+        ws.send("server received: " + message.toString());
+    });
+
+    ws.on("close", () => {
+        console.log("WebSocket connection closed");
+    });
+})

@@ -139,28 +139,6 @@ class OrderBook {
 
     }
 
-    public clone(): OrderBook {
-        const copy = new OrderBook();
-        copy.asks = new Map();
-        for (const [price, orders] of this.asks) {          
-            copy.asks.set(price,orders.map(order => ({ ...order })));  
-        }
-        copy.bids = new Map();
-        for (const [price, orders] of this.bids) {          
-            copy.bids.set(price,orders.map(order => ({ ...order })));  
-        }
-        copy.asksHeap = new MinHeap();
-        for (const price of this.asksHeap.toArray()) {
-            copy.asksHeap.offer(price);
-        }
-        copy.bidsHeap = new MaxHeap();
-        for (const price of this.bidsHeap.toArray()) {
-            copy.bidsHeap.offer(price);
-        }
-        return copy;
-}
-
-
 }
 
 
@@ -178,7 +156,7 @@ async function initialiseOrderbooks(){
 
     for (const asset of assets) {
         orderBooks.set(asset.id, new OrderBook());
-        assetMap.set(asset.Symbol, asset.id);
+        assetMap.set(asset.id,asset.Symbol);
     }
 }
 

@@ -52,23 +52,6 @@ export class inMemoryBalances{
 
     // }
 
-    clone(userId:string){
-        const userBal = this.map.get(userId);
-        const clonedBal = new Map<string,Quantities>;
-        if (userBal === undefined) {
-            return undefined;
-        }
-
-        for(const asset of userBal.keys()){
-            const val = userBal.get(asset);
-            clonedBal.set(asset,{...val!});
-        }
-        return clonedBal;
-    }
-
-    commit(userId:string,userBal:Map<string,Quantities>){
-        this.map.set(userId,userBal);
-    }
 }
 
 
