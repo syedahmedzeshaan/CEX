@@ -1,7 +1,10 @@
 import { matchingEngine } from "./matchingEngine";
-import { Order } from "./orderbook";
+import { assetMap, Order, OrderBook } from "./orderbook";
 import { prisma } from "../lib/prisma";
 import { balances } from ".";
+import { subscriptionsManager } from ".";
+import { orderBooks } from "./orderbook";
+
 type side = "buy"|"sell";
 type reqBody = {
     assetId:string,
@@ -64,8 +67,37 @@ export class orderService {
             return res;
         }
 
+
+        let trades:{
+            price:number,
+            qty:number
+        }[] = [];
+
+        for(const fill of res.fills){
+            trades.push({
+                price:fill.price,
+                qty:fill.filledQty
+            });
+        }
+        for(let i = 0;i<res.fills.length; i+=2){
+            let fill = res.fills[i]!;
+            trades.push({
+                price:fill.price,
+                qty:fill.filledQty
+            });
+        }
+        const {asks,bids} = orderBooks.get(order.assetId)!.getDepth();
+        subscriptionsManager.broadcast(order.assetId,{
+            symbol:assetMap.get(order.assetId)!,
+            trades:trades,
+            depth:{
+                asks:asks,
+                bids:bids
+            }
+        });
+
         await this.enqueuePersist(order.assetId ,res);
-        balances.map.set(userId,res.newBalance);
+
         return {
             success: true,
             order: res.incomingOrder,

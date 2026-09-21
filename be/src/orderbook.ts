@@ -139,7 +139,39 @@ class OrderBook {
 
     }
 
-}
+    public getDepth(){
+        const asks = [];
+        const bids = [];
+        
+        for(const [price,orders] of this.asks){
+            let qty = 0;
+            for(const order of orders){
+                qty += order.qty - order.filledQty;
+            }
+
+            asks.push({
+                price:price,
+                qty:qty
+            })
+        }
+
+        for(const [prices,orders] of this.bids){
+            let qty = 0;
+            for(const order of orders){
+                qty += order.qty - order.filledQty;
+            }
+
+            bids.push({
+                price:prices,
+                qty:qty
+            })
+    }
+    return {
+        asks,
+        bids
+            };
+
+}}
 
 
 

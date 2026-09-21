@@ -3,16 +3,19 @@ import cors from "cors";
 import { z } from "zod";
 import {prisma} from "../lib/prisma.ts"
 import jwt from "jsonwebtoken";
+import { WebSocket } from "ws";
 
 import auth from "./middleware/auth.ts";
 import { errorHandler } from "./middleware/error.ts";
 import { orderService } from "./orderService.ts";
 import { inMemoryBalances } from "./inMemoryBalances.ts";
 import { WebSocketServer } from "ws";
+import { SubscriptionsManager } from "./websocket/SubscriptionsManager.ts";
 
 const app = express();
 const orderServiceObject = new orderService();
 export const balances = new inMemoryBalances();
+export const subscriptionsManager = new SubscriptionsManager();
 
 const port = process.env.PORT!;
 const jwt_secret = process.env.JWT_SECRET!;
@@ -274,16 +277,17 @@ const httpServer = app.listen(3000,()=>{
     console.log("HEEHe, listening on port "+ port);
 });
 
-const wsServer = new WebSocketServer({
+export const wss = new WebSocketServer({
     server:httpServer
 });
 
-wsServer.on("connection",(ws)=>{
+wss.on("connection",(ws)=>{
     console.log("WebSocket connection established");
 
     ws.on("message", (message) => {
-        console.log("message:", message.toString());
-        ws.send("server received: " + message.toString());
+        const msg = JSON.parse(message.toString());
+        if(msg.type === "subscribe")subscriptionsManager.subscribe(msg.symbol, ws);
+        if(msg.type === "unsubscribe")subscriptionsManager.unsubscribe(msg.symbol, ws);
     });
 
     ws.on("close", () => {
