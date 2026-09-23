@@ -1,0 +1,209 @@
+.order-form {
+    width: 100%;
+}
+
+.panel-title {
+    margin: 0 0 20px;
+
+    color: #f3f4f6;
+
+    font-size: 16px;
+    font-weight: 600;
+}
+
+/* STATUS */
+
+.order-status {
+    display: flex;
+    flex-direction: column;
+    gap: 5px;
+
+    margin-bottom: 20px;
+    padding: 15px 16px;
+
+    border: 1px solid;
+    border-radius: 7px;
+
+    font-size: 14px;
+}
+
+.order-status strong {
+    font-size: 16px;
+    font-weight: 700;
+}
+
+.order-status span {
+    font-size: 13px;
+}
+
+.order-status.buy {
+    color: #5eead4;
+
+    background: rgba(38, 166, 154, 0.12);
+    border-color: rgba(38, 166, 154, 0.30);
+}
+
+.order-status.sell {
+    color: #ff7777;
+
+    background: rgba(239, 83, 80, 0.12);
+    border-color: rgba(239, 83, 80, 0.30);
+}
+
+.order-status.error {
+    color: #ff7777;
+
+    background: rgba(239, 83, 80, 0.10);
+    border-color: rgba(239, 83, 80, 0.30);
+}
+
+/* BUY / SELL */
+
+.side-tabs {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+
+    margin-bottom: 22px;
+
+    border-bottom: 1px solid #242831;
+}
+
+.side-tabs button {
+    border: none;
+
+    background: transparent;
+    color: #858c98;
+
+    padding: 12px 0;
+
+    font-size: 14px;
+    font-weight: 500;
+
+    border-bottom: 2px solid transparent;
+}
+
+.side-tabs button:hover {
+    color: #d1d5db;
+}
+
+.side-tabs button.active.buy {
+    color: #26a69a;
+    border-bottom-color: #26a69a;
+}
+
+.side-tabs button.active.sell {
+    color: #ef5350;
+    border-bottom-color: #ef5350;
+}
+
+/* INPUTS */
+
+.order-input {
+    display: grid;
+
+    grid-template-columns:
+        80px
+        1fr
+        55px;
+
+    align-items: center;
+
+    gap: 10px;
+
+    margin-bottom: 14px;
+}
+
+.order-input label {
+    color: #8b929e;
+    font-size: 13px;
+}
+
+.order-input input {
+    width: 100%;
+
+    border: 1px solid #292e37;
+    border-radius: 6px;
+
+    background: #171a20;
+    color: #f3f4f6;
+
+    padding: 12px;
+
+    font-size: 14px;
+
+    outline: none;
+}
+
+.order-input input:focus {
+    border-color: #4b5563;
+}
+
+.order-input input::placeholder {
+    color: #4b5563;
+}
+
+.order-input span {
+    color: #858c98;
+    font-size: 12px;
+}
+
+/* TOTAL */
+
+.order-total {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+
+    margin-top: 4px;
+    margin-bottom: 16px;
+
+    color: #8b929e;
+
+    font-size: 13px;
+}
+
+.order-total strong {
+    color: #f3f4f6;
+
+    font-size: 14px;
+    font-weight: 500;
+}
+
+/* BUTTON */
+
+.place-order-button {
+    width: 100%;
+
+    margin-top: 8px;
+
+    border: none;
+    border-radius: 6px;
+
+    padding: 13px;
+
+    color: white;
+
+    font-size: 14px;
+    font-weight: 600;
+}
+
+.place-order-button.buy {
+    background: #167c70;
+}
+
+.place-order-button.buy:hover {
+    background: #1b9183;
+}
+
+.place-order-button.sell {
+    background: #c83c3c;
+}
+
+.place-order-button.sell:hover {
+    background: #df4747;
+}
+
+.place-order-button:disabled {
+    opacity: 0.6;
+    cursor: default;
+}

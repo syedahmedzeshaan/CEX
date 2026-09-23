@@ -1,0 +1,106 @@
+.signup-page {
+    min-height: calc(100vh - 64px);
+
+    display: flex;
+    justify-content: center;
+    align-items: flex-start;
+
+    padding-top: 80px;
+}
+
+.signup-card {
+    width: 360px;
+    padding: 28px;
+
+    border: 1px solid #252932;
+    border-radius: 6px;
+
+    background: #111419;
+}
+
+.signup-card h2 {
+    margin: 0 0 24px;
+
+    font-size: 20px;
+    font-weight: 600;
+}
+
+.signup-card form {
+    display: flex;
+    flex-direction: column;
+    gap: 18px;
+}
+
+.signup-card label {
+    display: flex;
+    flex-direction: column;
+    gap: 7px;
+
+    color: #9ca3af;
+    font-size: 13px;
+}
+
+.signup-card input {
+    width: 100%;
+    padding: 11px;
+
+    border: 1px solid #30343d;
+    border-radius: 4px;
+
+    background: #15181d;
+    color: #e5e7eb;
+
+    outline: none;
+}
+
+.signup-card input:focus {
+    border-color: #4b5563;
+}
+
+.signup-card button {
+    width: 100%;
+    margin-top: 4px;
+    padding: 11px;
+
+    border: 0;
+    border-radius: 4px;
+
+    background: #3b82f6;
+    color: white;
+
+    font-weight: 600;
+}
+
+.signup-card button:hover {
+    filter: brightness(1.1);
+}
+
+.signup-card button:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+}
+
+.auth-error {
+    margin: 0;
+
+    color: #ef5350;
+    font-size: 13px;
+}
+
+.auth-switch {
+    margin: 18px 0 0;
+
+    text-align: center;
+
+    color: #6b7280;
+    font-size: 13px;
+}
+
+.auth-switch a {
+    color: #3b82f6;
+    text-decoration: none;
+}
+
+.auth-switch a:hover {
+    text-decoration: underline;
+}

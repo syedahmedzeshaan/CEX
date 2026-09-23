@@ -1,0 +1,128 @@
+.orderbook {
+    width: 100%;
+    height: 100%;
+}
+
+.orderbook-header,
+.orderbook-row {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    align-items: center;
+}
+
+.orderbook-header {
+    padding: 4px 4px 7px;
+    color: #777f8c;
+    border-bottom: 1px solid #242831;
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: .04em;
+}
+
+.orderbook-header span:last-child {
+    text-align: right;
+}
+
+.orderbook-row {
+    position: relative;
+    min-height: 22px;
+    padding: 3px 4px;
+    color: #cbd0d8;
+    font-size: 12px;
+    overflow: hidden;
+}
+
+.orderbook-row > span {
+    position: relative;
+    z-index: 1;
+}
+
+.orderbook-row span:last-child {
+    text-align: right;
+}
+
+/* =========================
+   DEPTH VISUALIZATION
+   ========================= */
+
+.depth-bar {
+    position: absolute;
+    top: 1px;
+    right: 0;
+    bottom: 1px;
+
+    pointer-events: none;
+    transition: width .15s ease;
+}
+
+.ask .depth-bar {
+    background: rgba(239, 83, 80, .09);
+}
+
+.bid .depth-bar {
+    background: rgba(38, 166, 154, .09);
+}
+
+.orderbook-row:hover {
+    background: #1b1f27;
+}
+
+.asks .orderbook-row:first-child {
+    margin-top: 2px;
+}
+
+.asks .orderbook-row span:first-of-type {
+    color: #ef5350;
+}
+
+.bids .orderbook-row span:first-of-type {
+    color: #26a69a;
+}
+
+/* =========================
+   LAST TRADED PRICE
+   ========================= */
+
+.current-price {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+
+    margin: 7px 0;
+    padding: 4px 0;
+
+    color: #f3f4f6;
+    font-size: 14px;
+    font-weight: 600;
+    letter-spacing: .01em;
+
+    border-top: 1px solid #242831;
+    border-bottom: 1px solid #242831;
+}
+
+/* =========================
+   EMPTY STATE
+   ========================= */
+
+.empty-book,
+.empty-orderbook {
+    padding: 10px 4px;
+    text-align: center;
+    color: #777f8c;
+    font-size: 12px;
+}
+
+/* =========================
+   OPTIONAL SPREAD
+   ========================= */
+
+.spread {
+    margin: 7px 0;
+    padding: 5px 4px;
+    border-top: 1px solid #242831;
+    border-bottom: 1px solid #242831;
+    color: #777f8c;
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: .05em;
+}
