@@ -1,9 +1,3 @@
-// This is your Prisma schema file,
-// learn more about it in the docs: https://pris.ly/d/prisma-schema
-
-// Get a free hosted Postgres database in seconds: `npx create-db`
-
-
 enum Side {
   buy
   sell
@@ -29,195 +23,122 @@ generator client {
 datasource db {
   provider = "postgresql"
 }
-  
-model User{
-  id    String @id @default(uuid())
-  username String @unique
-  password String 
-  usdBal Int @default(0)
-  lockedBal Int @default(0)
 
-  orders Order[]
-  balance Balance[]
-  fills Fills[]
+model User {
+  id         String   @id @default(uuid())
+  username   String   @unique
+  password   String
+  usdBal     Int      @default(0)
+  lockedBal  Int      @default(0)
+
+  orders     Order[]
+  balance    Balance[]
+  fills      Fills[]
 }
 
-model Asset{
-  id String @id @default(uuid())
-  name String
-  Symbol String
+model Asset {
+  id         String   @id @default(uuid())
+  name       String
+  Symbol     String
 
-  orders Order[]
-  fills Fills[]
-  balance Balance[]
-  candles1m Candle_1m[]
+  orders     Order[]
+  fills      Fills[]
+  balance    Balance[]
+
+  candles1m  Candle_1m[]
   candles15m Candle_15m[]
-  candles1h Candle_1h[]
-  candles1w Candle_1w[]
-  candles1d Candle_1d[]
-  candles1mon Candle_1mon[]
-  candles1y Candle_1y[]
+  candles1h  Candle_1h[]
 }
 
-model Order{
-  id String @id @default(uuid())
+model Order {
+  id         String   @id @default(uuid())
+  assetId    String
+  asset      Asset    @relation(fields: [assetId], references: [id])
 
-  assetId String 
-  asset Asset @relation(fields: [assetId],references:[id])
+  userId     String
+  user       User     @relation(fields: [userId], references: [id])
 
-  userId String
-  user User @relation(fields: [userId],references: [id])
-
-  side Side
-  price Int
-  qty Int
-  type Type
+  side       Side
+  price      Int
+  qty        Int
+  type       Type
   created_at DateTime
-  filledQty Int @default(0)
-  status Status
+  filledQty  Int      @default(0)
+  status     Status
 
-  fills Fills[]
+  fills      Fills[]
 }
 
-model Fills{
-  id String @id @default(uuid())
+model Fills {
+  id         String   @id @default(uuid())
 
-  userId String
-  user User @relation(fields: [userId],references: [id])
+  userId     String
+  user       User     @relation(fields: [userId], references: [id])
 
-  orderId String
-  order Order @relation(fields: [orderId],references: [id])
+  orderId    String
+  order      Order    @relation(fields: [orderId], references: [id])
 
-  assetId String
-  asset Asset @relation(fields: [assetId],references: [id])
+  assetId    String
+  asset      Asset    @relation(fields: [assetId], references: [id])
 
-  filledQty Int @default(0)
-  side Side
-  type Type
-  price Int
-  filled_at DateTime
+  filledQty  Int      @default(0)
+  side       Side
+  type       Type
+  price      Int
+  filled_at  DateTime
 }
 
-model Balance{
-  id String @id @default(uuid())
+model Balance {
+  id         String   @id @default(uuid())
 
-  userId String
-  user User @relation(fields: [userId], references: [id])
+  userId     String
+  user       User     @relation(fields: [userId], references: [id])
 
-  assetId String
-  asset Asset @relation(fields: [assetId],references: [id])
+  assetId    String
+  asset      Asset    @relation(fields: [assetId], references: [id])
 
-  qty Int
-  lockedQty Int @default(0)
+  qty        Int
+  lockedQty  Int      @default(0)
 }
 
-//1m,5m,1h,1d,1w 
+model Candle_1m {
+  id         String   @id @default(uuid())
 
-model Candle_1m{
-  id String @default(uuid()) @id
+  assetId    String
+  asset      Asset    @relation(fields: [assetId], references: [id])
 
-  assetId String
-  asset Asset @relation(fields: [assetId],references: [id])
-
-  timestamp DateTime
-  volume Int
-  H Int
-  L Int
-  O Int
-  C Int
+  timestamp  DateTime
+  volume     Int
+  H          Int
+  L          Int
+  O          Int
+  C          Int
 }
 
+model Candle_15m {
+  id         String   @id @default(uuid())
 
-model Candle_15m{
-  id String @default(uuid()) @id
+  assetId    String
+  asset      Asset    @relation(fields: [assetId], references: [id])
 
-  assetId String
-  asset Asset @relation(fields: [assetId],references: [id])
-
-  timestamp DateTime
-  volume Int
-  H Int
-  L Int
-  O Int
-  C Int
+  timestamp  DateTime
+  volume     Int
+  H          Int
+  L          Int
+  O          Int
+  C          Int
 }
 
+model Candle_1h {
+  id         String   @id @default(uuid())
 
-model Candle_1h{
-  id String @default(uuid()) @id
+  assetId    String
+  asset      Asset    @relation(fields: [assetId], references: [id])
 
-  assetId String
-  asset Asset @relation(fields: [assetId],references: [id])
-
-  timestamp DateTime
-  volume Int
-  H Int
-  L Int
-  O Int
-  C Int
+  timestamp  DateTime
+  volume     Int
+  H          Int
+  L          Int
+  O          Int
+  C          Int
 }
-
-
-model Candle_1d{
-  id String @default(uuid()) @id
-
-  assetId String
-  asset Asset @relation(fields: [assetId],references: [id])
-
-  timestamp DateTime
-  volume Int
-  H Int
-  L Int
-  O Int
-  C Int
-}
-
-
-model Candle_1w{
-  id String @default(uuid()) @id
-
-  assetId String
-  asset Asset @relation(fields: [assetId],references: [id])
-
-  timestamp DateTime
-  volume Int
-  H Int
-  L Int
-  O Int
-  C Int
-}
-
-
-model Candle_1mon{
-  id String @default(uuid()) @id
-
-  assetId String
-  asset Asset @relation(fields: [assetId],references: [id])
-
-  timestamp DateTime
-  volume Int
-  H Int
-  L Int
-  O Int
-  C Int
-}
-
-
-model Candle_1y{
-  id String @default(uuid()) @id
-
-  assetId String
-  asset Asset @relation(fields: [assetId],references: [id])
-
-  timestamp DateTime
-  volume Int
-  H Int
-  L Int
-  O Int
-  C Int
-}
-
-
-
-
-

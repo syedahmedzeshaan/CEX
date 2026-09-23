@@ -1,6 +1,6 @@
 import { Fills } from "../generated/prisma/browser";
 import {orderBooks,Order} from "./orderbook";
-import {balances} from ".";
+import {balances} from "./state";
 import {Quantities} from "./inMemoryBalances";
 
 interface usdBalanceUpdate{
@@ -40,7 +40,8 @@ export class matchingEngine{
                 ordersToUpdate:new Map(),
                 fills: [],
                 usdBalanceUpdates: new Map(),
-                assetBalanceUpdates: new Map()
+                assetBalanceUpdates: new Map(),
+
             };
         return matchingResult;
     }
@@ -83,6 +84,7 @@ export class matchingEngine{
 
         let matchingResult = this.initialiseResult(order);
         const incomingOrder = {...order};
+        matchingResult.incomingOrder = incomingOrder;
         
         
         if (incomingOrder.qty < 0 || incomingOrder.filledQty < 0 || incomingOrder.filledQty > incomingOrder.qty) {
@@ -350,6 +352,30 @@ export class matchingEngine{
                 }
 
                 const restingOrder = {...bestBid};
+                                    console.log("========== SELL MATCH ==========");
+                    console.log("incoming:", {
+                        side: incomingOrder.side,
+                        price: incomingOrder.price,
+                        qty: incomingOrder.qty,
+                        filledQty: incomingOrder.filledQty,
+                        remainingQty
+                    });
+
+                    console.log("resting:", {
+                        side: restingOrder.side,
+                        price: restingOrder.price,
+                        qty: restingOrder.qty,
+                        filledQty: restingOrder.filledQty
+                    });
+
+                    console.log(
+                        "PRICE CHECK:",
+                        incomingOrder.price,
+                        ">",
+                        restingOrder.price,
+                        "=",
+                        incomingOrder.price > restingOrder.price
+                    );
 
                  if (restingOrder.filledQty < 0 || restingOrder.filledQty >= restingOrder.qty) {
                     matchingResult.success = false;
@@ -360,15 +386,29 @@ export class matchingEngine{
                 if(incomingOrder.price > restingOrder.price ){
                     break;
                 }
+                
                 const targetUserBalances = balances.getBalance(restingOrder.userId);
+                 console.log("TARGET BALANCES:", targetUserBalances);
+
                 if (targetUserBalances === undefined) {
                     matchingResult.success = false;
                     matchingResult.reason = "seller user balances undefined";
                     return matchingResult;
                 }
+                
 
                 let availableQty = restingOrder.qty - restingOrder.filledQty;
                 let fillQty = Math.min(availableQty,remainingQty);
+
+                console.log("FILL:", {
+
+                        availableQty,
+
+                        remainingQty,
+
+                        fillQty
+
+                    });
 
                 //step 1 update quantities
 

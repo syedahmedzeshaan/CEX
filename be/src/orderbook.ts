@@ -1,7 +1,7 @@
 //import {MinHeap , MaxHeap} from "heap-js";
-import MinHeap from "heap-js";
-import MaxHeap from "heap-js";
+import { Heap } from "heap-js";
 import {prisma} from "../lib/prisma";
+
 interface Order {
     id: string;
     userId: string;
@@ -21,15 +21,15 @@ interface Order {
 class OrderBook {
     asks:Map<number,Order[]>;
     bids : Map<number,Order[]>;
-    asksHeap : MinHeap<number>;
-    bidsHeap : MaxHeap<number>;
+    asksHeap : Heap<number>;
+    bidsHeap : Heap<number>;
 
     public constructor(){
         this.asks = new Map();
         this.bids = new Map();
 
-        this.asksHeap = new MinHeap();
-        this.bidsHeap = new MaxHeap();
+        this.asksHeap = new Heap<number>((a,b)=>a-b); 
+        this.bidsHeap = new Heap<number>((a,b)=>b-a); 
     }
 
     public addOrder(order:Order){
@@ -91,29 +91,33 @@ class OrderBook {
     }
 
 
-    public getBestBid(){
-        const price = this.bidsHeap.peek();
-        if(price === undefined){
-            return {
-                success:false,
-                reason:"ORDERBOOK_IS_EMPTY"
-            }
-        }
-        const orders = this.bids.get(price);
+   public getBestBid(){
+    const price = this.bidsHeap.peek();
 
-        if(!orders){
-            return { 
-                    success: false, 
-                    reason: "ORDERBOOK_INCONSISTENT"
-                };
-        }
-
+    if(price === undefined){
         return {
-                    success: true, 
-                    order: orders[0]
-                };
-
+            success:false,
+            reason:"ORDERBOOK_IS_EMPTY"
+        };
     }
+
+    const orders = this.bids.get(price);
+
+
+    if(!orders){
+        return {
+            success:false,
+            reason:"ORDERBOOK_INCONSISTENT"
+        };
+    }
+
+    return {
+        success:true,
+        order:orders[0]
+    };
+}
+           
+        
 
     public getBestAsk(){
         const price = this.asksHeap.peek();
@@ -139,56 +143,123 @@ class OrderBook {
 
     }
 
-    public getDepth(){
-        const asks = [];
-        const bids = [];
-        
-        for(const [price,orders] of this.asks){
-            let qty = 0;
-            for(const order of orders){
-                qty += order.qty - order.filledQty;
+   public getDepth(){
+    const asks = [];
+    const bids = [];
+    
+    for(const [price,orders] of this.asks){
+        let qty = 0;
+
+        for(const order of orders){
+
+            if(order.filledQty > order.qty){
+                console.error("INVALID ASK ORDER STATE", {
+                    orderId: order.id,
+                    price: order.price,
+                    qty: order.qty,
+                    filledQty: order.filledQty,
+                    side: order.side,
+                    status: order.status
+                });
             }
 
-            asks.push({
-                price:price,
-                qty:qty
-            })
+            qty += order.qty - order.filledQty;
         }
 
-        for(const [prices,orders] of this.bids){
-            let qty = 0;
-            for(const order of orders){
-                qty += order.qty - order.filledQty;
+        asks.push({
+            price: price,
+            qty: qty
+        });
+    }
+
+    for(const [prices,orders] of this.bids){
+        let qty = 0;
+
+        for(const order of orders){
+
+            if(order.filledQty > order.qty){
+                console.error("INVALID BID ORDER STATE", {
+                    orderId: order.id,
+                    price: order.price,
+                    qty: order.qty,
+                    filledQty: order.filledQty,
+                    side: order.side,
+                    status: order.status
+                });
             }
 
-            bids.push({
-                price:prices,
-                qty:qty
-            })
-    }
-    return {
-        asks,
-        bids
-            };
+            qty += order.qty - order.filledQty;
+        }
 
-}}
+        bids.push({
+            price: prices,
+            qty: qty
+        });
+    }
+
+    asks.sort((a, b) => a.price - b.price);
+    bids.sort((a, b) => b.price - a.price);
+
+    return { asks, bids };
+}
+    public hasOrder(orderId: string, side: "buy" | "sell", price: number) {
+            const map = side === "buy" ? this.bids : this.asks;
+            const orders = map.get(price);
+            if (!orders) return false;
+            return orders.some(order => order.id === orderId);
+}
+
+    
+
+    
+
+}
 
 
 
 
 let orderBooks:Map<string,OrderBook> = new Map(); 
 let assetMap:Map<string,string> = new Map();
-async function initialiseOrderbooks(){
+async function initialiseOrderbooks() {
     const assets = await prisma.asset.findMany({
-        select:{
-            id:true,
-            Symbol:true
+        select: {
+            id: true,
+            Symbol: true
         }
     });
 
     for (const asset of assets) {
-        orderBooks.set(asset.id, new OrderBook());
-        assetMap.set(asset.id,asset.Symbol);
+        const orderBook = new OrderBook();
+
+        orderBooks.set(asset.id, orderBook);
+        assetMap.set(asset.id, asset.Symbol);
+
+        const activeOrders = await prisma.order.findMany({
+            where: {
+                assetId: asset.id,
+                status: {
+                    in: ["placed", "partiallyFilled"]
+                }
+            },
+            orderBy: {
+                created_at: "asc"
+            }
+        });
+
+        for (const order of activeOrders) {
+            orderBook.addOrder({
+                id: order.id,
+                userId: order.userId,
+                assetId: order.assetId,
+                side: order.side,
+                price: order.price,
+                qty: order.qty,
+                filledQty: order.filledQty,
+                type: order.type,
+                created_at: order.created_at,
+                status: order.status
+            });
+        }
     }
 }
 

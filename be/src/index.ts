@@ -8,14 +8,16 @@ import { WebSocket } from "ws";
 import auth from "./middleware/auth.ts";
 import { errorHandler } from "./middleware/error.ts";
 import { orderService } from "./orderService.ts";
-import { inMemoryBalances } from "./inMemoryBalances.ts";
 import { WebSocketServer } from "ws";
-import { SubscriptionsManager } from "./websocket/SubscriptionsManager.ts";
+import {assetMap , orderBooks } from "./orderbook.ts";
+import {balances,subscriptionsManager,candleManager } from "./state";
+import { setupBots } from "./bots/setupBots";
 
 const app = express();
 const orderServiceObject = new orderService();
-export const balances = new inMemoryBalances();
-export const subscriptionsManager = new SubscriptionsManager();
+await balances.initialiseFromDatabase();
+const botManager = await setupBots(orderServiceObject);
+botManager.start();
 
 const port = process.env.PORT!;
 const jwt_secret = process.env.JWT_SECRET!;
@@ -90,47 +92,138 @@ app.post("/signup",async(req,res)=>{
 
 
 
-    app.post("/login",async(req,res)=>{
-        const result = signupSchema.safeParse(req.body);
-        if (!result.success) {
-            return res.status(400).json({
-                error: result.error
-            });
+    app.post("/login", async (req, res) => {
+    const result = signupSchema.safeParse(req.body);
+
+    if (!result.success) {
+        return res.status(400).json({
+            error: result.error
+        });
+    }
+
+    const { username, password } = result.data;
+
+    const user = await prisma.user.findUnique({
+        where: {
+            username
         }
+    });
 
-        const { username, password } = result.data;
+    if (!user) {
+        return res.status(400).json({
+            msg: "invalid credentials"
+        });
+    }
 
-        const user = await prisma.user.findUnique({
-            where:{
-                username
+    const isValid = await Bun.password.verify(
+        password,
+        user.password
+    );
+
+    if (!isValid) {
+        return res.status(400).json({
+            msg: "invalid credentials"
+        });
+    }
+
+    const token = jwt.sign(
+        {
+            id: user.id
+        },
+        jwt_secret
+    );
+
+    return res.status(200).json({
+        token
+    });
+});
+app.post("/faucet", auth, async (req, res) => {
+    const userId = req.userId!;
+
+    const USD_AMOUNT = 100_000;
+    const ASSET_AMOUNT = 1_000;
+
+    const assets = await prisma.asset.findMany();
+
+    if (assets.length === 0) {
+        return res.status(500).json({
+            status: "failed",
+            reason: "No assets exist"
+        });
+    }
+
+    await prisma.$transaction(async (tx) => {
+        // Add USD
+        await tx.user.update({
+            where: { id: userId },
+            data: {
+                usdBal: {
+                    increment: USD_AMOUNT
+                }
             }
         });
 
-        if(!user){
-            return res.status(400).json({
-                "msg":"invalid credentials"
-        });
+        // Add every asset
+        for (const asset of assets) {
+            const balance = await tx.balance.findFirst({
+                where: {
+                    userId,
+                    assetId: asset.id
+                }
+            });
+
+            if (balance) {
+                await tx.balance.update({
+                    where: {
+                        id: balance.id
+                    },
+                    data: {
+                        qty: {
+                            increment: ASSET_AMOUNT
+                        }
+                    }
+                });
+            } else {
+                await tx.balance.create({
+                    data: {
+                        userId,
+                        assetId: asset.id,
+                        qty: ASSET_AMOUNT,
+                        lockedQty: 0
+                    }
+                });
+            }
         }
-
-        const isValid = await Bun.password.verify(password,user.password);
-
-        if(!isValid){
-            return res.status(400).json({
-                "msg":"invalid credentials"
-        });
-        }
-
-        const token = jwt.sign({
-            id:user.id
-        },jwt_secret);
-
-        return res.status(204).json({
-            token
-        });
     });
 
+    // Keep in-memory balances in sync
+    if (balances.getBalance(userId) === undefined) {
+        balances.createAccount(userId);
+    }
 
-//----ORDER --------
+    balances.addBalance(
+        userId,
+        "usd",
+        USD_AMOUNT
+    );
+
+    for (const asset of assets) {
+        balances.addBalance(
+            userId,
+            asset.id,
+            ASSET_AMOUNT
+        );
+    }
+
+    return res.status(200).json({
+        status: "successful",
+        usd: USD_AMOUNT,
+        assets: assets.map(asset => ({
+            symbol: asset.Symbol,
+            qty: ASSET_AMOUNT
+        }))
+    });
+});
 
 const orderSchema = z.object({
     assetId: z.string().uuid(),
@@ -176,6 +269,17 @@ app.get("/orders",auth ,async (req,res)=>{
     return res.json(userOrders);
 });
 
+app.get("/asset", (req, res) => {
+    const assets = Array.from(
+        assetMap.entries()
+    ).map(([id, symbol]) => ({
+        id,
+        symbol
+    }));
+
+    return res.status(200).json(assets);
+});
+
 app.get("/order/:orderId",auth, async (req,res)=>{
     const userId = req.userId;
     const orderId = req.params.orderId;
@@ -201,39 +305,145 @@ app.get("/order/:orderId",auth, async (req,res)=>{
     return res.status(200).json(order);
 });
 
-
-app.delete("/order/:orderId",auth,async (req,res)=>{
-    const userId = req.userId;
+app.delete("/order/:orderId", auth, async (req, res) => {
+    const userId = req.userId!;
     const orderId = req.params.orderId;
-    if(typeof orderId !== "string"){
+
+    if (typeof orderId !== "string") {
         return res.status(400).json({
             msg: "invalid order id"
         });
     }
-    const order = await prisma.order.findFirst({
-        where:{
-            id:orderId,
-            userId:userId
-        }
-    });
-    if(order === undefined){
+
+    const response = await orderServiceObject.cancelOrder(
+        orderId,
+        userId
+    );
+
+    if (!response.success) {
         return res.status(400).json({
-            status:"failed",
-            reason:"order doesnt exist"
+            status: "failed",
+            reason: response.reason
         });
     }
-    await prisma.order.delete({
-        where:{
-            id:orderId
-        }
-    });
-    return res.status(204).json({
-        status:"successful",
-    })
+
+    return res.status(200).json(response);
 });
 
+
 //----MARKET DATA---
-app.get("/depth/:symbol",(req,res)=>{});
+app.get("/depth/:symbol", async (req, res) => {
+    const symbol = req.params.symbol;
+
+    let assetId: string | undefined;
+
+    for (const [id, assetSymbol] of assetMap) {
+        if (assetSymbol === symbol) {
+            assetId = id;
+            break;
+        }
+    }
+
+    if (assetId === undefined) {
+        return res.status(404).json({
+            status: "failed",
+            reason: "asset not found"
+        });
+    }
+
+    const orderBook = orderBooks.get(assetId);
+
+    if (orderBook === undefined) {
+        return res.status(404).json({
+            status: "failed",
+            reason: "orderbook not found"
+        });
+    }
+
+     const depth = orderBook.getDepth();
+
+    const lastFill = await prisma.fills.findFirst({
+        where: {
+            assetId
+        },
+        orderBy: {
+            filled_at: "desc"
+        }
+    });
+    return res.status(200).json({
+        symbol,
+        ...depth,
+        price: lastFill?.price
+    });
+});
+
+app.get("/candles/:symbol", async (req, res) => {
+    const symbol = req.params.symbol;
+    const timeframe = Number(req.query.timeframe);
+    const limit = Number(req.query.limit) || 500;
+
+    if (timeframe !== 60_000 && timeframe !== 900_000 && timeframe !== 3_600_000) {
+        return res.status(400).json({
+            status: "failed",
+            reason: "invalid timeframe"
+        });
+    }
+
+    const asset = await prisma.asset.findFirst({
+        where: {
+            Symbol: symbol
+        }
+    });
+
+    if (!asset) {
+        return res.status(404).json({
+            status: "failed",
+            reason: "asset not found"
+        });
+    }
+
+    let candles;
+
+    if (timeframe === 60_000) {
+        candles = await prisma.candle_1m.findMany({
+            where: {
+                assetId: asset.id
+            },
+            orderBy: {
+                timestamp: "desc"
+            },
+            take: limit
+        });
+    }
+
+    if (timeframe === 900_000) {
+        candles = await prisma.candle_15m.findMany({
+            where: {
+                assetId: asset.id
+            },
+            orderBy: {
+                timestamp: "desc"
+            },
+            take: limit
+        });
+    }
+
+    if (timeframe === 3_600_000) {
+        candles = await prisma.candle_1h.findMany({
+            where: {
+                assetId: asset.id
+            },
+            orderBy: {
+                timestamp: "desc"
+            },
+            take: limit
+        });
+    }
+
+    candles!.reverse();
+
+    return res.status(200).json(candles);
+});
 
 
 //--------ACCOUNT INFORMATION--------
@@ -274,7 +484,7 @@ app.get("/balance",auth,async(req,res)=>{
 app.use(errorHandler);
 
 const httpServer = app.listen(3000,()=>{
-    console.log("HEEHe, listening on port "+ port);
+    console.log("HEEHeeeee zeee, listening on port "+ port);
 });
 
 export const wss = new WebSocketServer({
@@ -286,8 +496,9 @@ wss.on("connection",(ws)=>{
 
     ws.on("message", (message) => {
         const msg = JSON.parse(message.toString());
-        if(msg.type === "subscribe")subscriptionsManager.subscribe(msg.symbol, ws);
-        if(msg.type === "unsubscribe")subscriptionsManager.unsubscribe(msg.symbol, ws);
+        const stream = msg.stream;
+        if(msg.type === "subscribe")subscriptionsManager.subscribe(msg.symbol, ws,stream);
+        if(msg.type === "unsubscribe")subscriptionsManager.unsubscribe(msg.symbol, ws,stream);
     });
 
     ws.on("close", () => {

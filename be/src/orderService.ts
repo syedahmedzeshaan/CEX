@@ -1,9 +1,8 @@
 import { matchingEngine } from "./matchingEngine";
 import { assetMap, Order, OrderBook } from "./orderbook";
 import { prisma } from "../lib/prisma";
-import { balances } from ".";
-import { subscriptionsManager } from ".";
 import { orderBooks } from "./orderbook";
+import { balances,candleManager,subscriptionsManager } from "./state";
 
 type side = "buy"|"sell";
 type reqBody = {
@@ -37,7 +36,7 @@ export class orderService {
         return next;
     }
 
-    public async placeOrder(reqBody:reqBody,userId:string) {
+    public placeOrder(reqBody:reqBody,userId:string) {
 
         const order:Order = {
                 id:crypto.randomUUID(),
@@ -73,37 +72,152 @@ export class orderService {
             qty:number
         }[] = [];
 
-        for(const fill of res.fills){
-            trades.push({
-                price:fill.price,
-                qty:fill.filledQty
-            });
-        }
         for(let i = 0;i<res.fills.length; i+=2){
             let fill = res.fills[i]!;
             trades.push({
                 price:fill.price,
                 qty:fill.filledQty
             });
+            const trade = {
+                assetId: order.assetId,
+                price: fill.price,
+                qty: fill.filledQty,
+                timestamp: fill.filled_at
+                };
+            candleManager.processTrade(trade);
         }
+        const len = res.fills.length;
+        const tradePrice = res.fills.at(-1)?.price;
         const {asks,bids} = orderBooks.get(order.assetId)!.getDepth();
-        subscriptionsManager.broadcast(order.assetId,{
+
+        subscriptionsManager.broadcast(assetMap.get(order.assetId)!,{
+            type:"depth",
             symbol:assetMap.get(order.assetId)!,
             trades:trades,
             depth:{
                 asks:asks,
                 bids:bids
-            }
-        });
+            },
+            price:tradePrice
+        },"depth");
 
-        await this.enqueuePersist(order.assetId ,res);
+        this.enqueuePersist(order.assetId ,res);
+        const userFills = res.fills.filter(fill=>fill.userId === res.incomingOrder.userId);
 
         return {
             success: true,
             order: res.incomingOrder,
-            fills: res.fills
+            fills: userFills
         };
     }
+
+
+
+    public async cancelOrder(orderId: string, userId: string) {
+    const order = await prisma.order.findFirst({
+        where: {
+            id: orderId,
+            userId: userId
+        }
+    });
+
+    if (!order) {
+        return {
+            success: false,
+            reason: "ORDER_NOT_FOUND"
+        };
+    }
+
+    if (order.status !== "placed" && order.status !== "partiallyFilled") {
+        return {
+            success: false,
+            reason: "ORDER_NOT_CANCELLABLE"
+        };
+    }
+
+    const orderBook = orderBooks.get(order.assetId);
+
+    if (!orderBook) {
+        return {
+            success: false,
+            reason: "ORDERBOOK_UNDEFINED"
+        };
+    }
+
+    const removeResult = orderBook.removeOrder(order);
+
+    if (!removeResult.success) {
+        return {
+            success: false,
+            reason: removeResult.reason
+        };
+    }
+
+    const remainingQty = order.qty - order.filledQty;
+    const userBalances = balances.getBalance(userId);
+
+    if (!userBalances) {
+        return {
+            success: false,
+            reason: "USERBALANCES_UNDEFINED"
+        };
+    }
+
+    if (order.side === "buy") {
+        const usdBalance = userBalances.get("usd");
+
+        if (!usdBalance) {
+            return {
+                success: false,
+                reason: "USD_BALANCE_UNDEFINED"
+            };
+        }
+
+        const lockedAmount = order.price * remainingQty;
+        usdBalance.lockedQty -= lockedAmount;
+    } else {
+        const assetBalance = userBalances.get(order.assetId);
+
+        if (!assetBalance) {
+            return {
+                success: false,
+                reason: "ASSET_BALANCE_UNDEFINED"
+            };
+        }
+
+        assetBalance.lockedQty -= remainingQty;
+    }
+
+    order.status = "cancelled";
+
+    const { asks, bids } = orderBook.getDepth();
+    const symbol = assetMap.get(order.assetId)!;
+
+    subscriptionsManager.broadcast(
+        symbol,
+        {
+            type: "depth",
+            symbol,
+            trades: [],
+            depth: {
+                asks,
+                bids
+            },
+            price:undefined
+        },
+        "depth",
+        
+    );
+
+    this.enqueueCancelPersist(order);
+
+    return {
+        success: true,
+        order
+    };
+}
+
+
 
     private async persist(res:any){
 
@@ -182,4 +296,57 @@ export class orderService {
              throw err;
         }
     }
+
+    private enqueueCancelPersist(order: Order) {
+    const prev = persistanceQueue.get(order.assetId) ?? Promise.resolve();
+
+    const next = prev
+        .then(async () => {
+            await prisma.$transaction(async (tx) => {
+                await tx.order.update({
+                    where: {
+                        id: order.id
+                    },
+                    data: {
+                        status: "cancelled"
+                    }
+                });
+
+                if (order.side === "buy") {
+                    const remainingQty = order.qty - order.filledQty;
+                    const lockedAmount = order.price * remainingQty;
+
+                    await tx.user.update({
+                        where: {
+                            id: order.userId
+                        },
+                        data: {
+                            lockedBal: {
+                                decrement: lockedAmount
+                            }
+                        }
+                    });
+                } else {
+                    const remainingQty = order.qty - order.filledQty;
+
+                    await tx.balance.updateMany({
+                        where: {
+                            userId: order.userId,
+                            assetId: order.assetId
+                        },
+                        data: {
+                            lockedQty: {
+                                decrement: remainingQty
+                            }
+                        }
+                    });
+                }
+            });
+        })
+        .catch((err) => {
+            console.error("CANCEL_PERSIST_FAILED", order.id, err);
+        });
+
+    persistanceQueue.set(order.assetId, next);
+}
 }

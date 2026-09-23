@@ -5,7 +5,7 @@ ws
 out
 dist
 *.tgz
-
+/src/tests
 # code coverage
 coverage
 *.lcov
